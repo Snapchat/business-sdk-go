@@ -21,6 +21,7 @@ Go:
 ### Sending Production Events
 Please use the code example below as a template on sending your conversion events to Snap Conversion API. More conversion parameters are expected to be provided in practice.
 
+Example 1: Send a single CAPI event
 ```
 package main
 
@@ -86,21 +87,92 @@ func main() {
     //event.SetHashedZip("e7042ac7d09c7bc41c8cfa5749e41858f6980643bc0db1a83cc793d3e24d3f77")
     //event.SetClickId("click_id_example")
     
-    asyncRespChan := make(chan *sdk.AsyncResponse, 2)
+    asyncRespChan := make(chan *sdk.AsyncResponse, 1)
     // send single event asynchronously
     capiClient.SendEvent(*event, asyncRespChan)
-    // send multiple events asynchronously
-    capiClient.SendEvents([]sdk.CapiEvent{*event}, asyncRespChan)
     
-    defer func() {
-    for i := 0; i < 2; i++ {
-    result := <-asyncRespChan
-    
-            if result.Err != nil {
-               // handle result
-            }
-         }
-    }()
+	defer func() {
+		for i := 0; i < 2; i++ {
+			result := <-asyncRespChan
+
+			if result.Err != nil {
+				log.Error("Error when calling `ConversionApi.SendEvent``: %v\n", result.Err)
+				log.Error("Full HTTP response: %v\n", result.HttpResponse)
+			}
+			fmt.Fprintf(os.Stdout, "Response from `ConversionApi.SendEventAsync`: %v\n", result.Response)
+		}
+	}()
+}
+```
+
+
+Example 2: Sending a batch of CAPI events (up to 2000)
+```
+package main
+
+import (
+   "fmt"
+   "os"
+   "strconv"
+   "time"
+
+   sdk "github.com/Snapchat/business-sdk-go"
+   log "github.com/sirupsen/logrus"
+)
+
+func runAsyncSample(authToken, pixelId string) {
+   capiClient := sdk.NewCapiClient(authToken)
+   //capiClient := sdk.NewCapiClient(auth_token, sdk.WithLaunchPadUrl("url_here"))
+   capiClient.SetDebugging(true)
+
+   event1 := sdk.NewCapiEvent()
+   event1.SetPixelId(pixelId)
+   event1.SetEventType("PURCHASE")
+   event1.SetEventConversionType("WEB")
+   event1.SetEventTag("event_tag_example")
+   event1.SetTimestamp(strconv.FormatInt(time.Now().UnixMilli(), 10))
+   event1.SetUuidC1("34dd6077-e3a0-4b1c-9f91-a690ea0e335d")
+   event1.SetEmail("test@example.com")
+   event1.SetPhoneNumber("1234567890")
+   event1.SetIpAddress("12.34.56.78")
+   event1.SetItemCategory("item_category_example")
+   event1.SetItemIds("item_ids_example")
+   event1.SetDescription("description_example")
+   event1.SetNumberItems("number_items_example")
+   event1.SetPrice("price_example")
+   event1.SetCurrency("USD")
+   event1.SetTransactionId("transaction_id_example")
+   event1.SetLevel("level_example")
+   event1.SetClientDedupId("client_dedup_id_example")
+   event1.SetSearchString("search_string_example")
+   event1.SetPageUrl("page_url_example")
+   event1.SetSignUpMethod("sign_up_method_example")
+   event1.SetFirstName("test_first")
+
+   event2 := sdk.NewCapiEvent()
+   event2.SetPixelId(pixelId)
+   event2.SetEventType("PAGE_VIEW")
+   event2.SetEventConversionType("WEB")
+   event2.SetEventTag("event_tag_example")
+   event2.SetTimestamp(strconv.FormatInt(time.Now().UnixMilli(), 10))
+   event2.SetUuidC1("34dd6077-e3a0-4b1c-9f91-a690ea0e335d")
+   event2.SetEmail("test@example.com")
+   event2.SetPageUrl("page_url_example")
+
+   asyncRespChan := make(chan *sdk.AsyncResponse, 2)
+   capiClient.SendEvents([]sdk.CapiEvent{*event1, *event2}, asyncRespChan)
+
+   defer func() {
+       for i := 0; i < 2; i++ {
+           result := <-asyncRespChan
+
+           if result.Err != nil {
+               log.Error("Error when calling `ConversionApi.SendEvent``: %v\n", result.Err)
+               log.Error("Full HTTP response: %v\n", result.HttpResponse)
+           }
+           fmt.Fprintf(os.Stdout, "Response from `ConversionApi.SendEventAsync`: %v\n", result.Response)
+       }
+   }()
 }
 ```
 
@@ -122,7 +194,12 @@ responseLogs, httpRespLogs, err := capiClient.GetTestEventLogs(pixelId)
 
 ## Notes:
 1) Initiate ConversionApi
-   * Please use `sdk.NewCapiClient(longLivedToken, sdk.WithLaunchPadUrl("url_here"))`. if the Launch Pad has been set up under your domain. Conversion events will be forwarded to Snap transparently. (Other MPC features will be introduced in later versions).
+```
+sdk.NewCapiClient(longLivedToken) 
+// with launchpad URL
+// sdk.NewCapiClient(longLivedToken, sdk.WithLaunchPadUrl("url_here")) 
+```
+   * if the Launch Pad has been set up under your domain. Conversion events will be forwarded to Snap transparently. (Other MPC features will be introduced in later versions).
    * Otherwise, you can initiate the instance using `sdk.NewCapiClient(longLivedToken)` Conversion events are sent back to Snap from the business SDK directly.
    * It’s recommended to create a dedicated instance per thread to avoid any potential issues.
 2) API Token
@@ -139,7 +216,7 @@ responseLogs, httpRespLogs, err := capiClient.GetTestEventLogs(pixelId)
    * We highly recommend passing cookie1 `uuid_c1`, if available, as this will increase your match rate. You can access a 1st party cookie by looking at the _scid value under your domain if you are using the Pixel SDK.
 4) Send event(s) asynchronously
    * Conversion events can be sent individually via `SendEvent(event CapiEvent, rc chan *AsyncResponse)`.
-   * Conversion events can be reported in batch using `SendEvents(events []CapiEvent, rc chan *AsyncResponse)` if they are buffered in your application.
+   * Conversion events can be reported in batch using `SendEvents(events []CapiEvent, rc chan *AsyncResponse)` if they are buffered in your application Please check example/async.go for more details. We recommend a 1000 QPS limit for sending us requests. You may send up to 2000 events per batch request, and can thus send up to 2M events/sec. Sending more than 2000 events per batch will result in a 400 error.
    * Events are encapsulated in an asynchronous request in both solutions by which your application won’t be blocked. The response is logged by the asynchronous go routine (under debugging mode)
    * The asynchronous go routine will send back the response to your handler through a response channel that you can provide to the SendEvents function.
 5) Test Events, Logs, and Stats
